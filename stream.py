@@ -59,6 +59,15 @@ class UserManager:
     def login_user(self, username):
         return self.users.get(username)
 
+    def update_user(self, username, **kwargs):
+        user = self.users.get(username)
+        if user:
+            for key, value in kwargs.items():
+                setattr(user, key, value)
+            self.save_users("users.json")
+            return True
+        return False
+
     def save_users(self, filename):
         with open(filename, 'w') as out_file:
             json.dump({username: user.__dict__ for username, user in self.users.items()}, out_file)
@@ -67,18 +76,13 @@ class UserManager:
         try:
             with open(filename, 'r') as in_file:
                 users_data = json.load(in_file)
-                if isinstance(users_data, dict):  # Check if it's a dictionary
+                if isinstance(users_data, dict):
                     for username, data in users_data.items():
-                        if all(key in data for key in ["username", "budget", "age", "weight", "height", "health_condition"]):
-                            self.users[username] = User(**data)
-                        else:
-                            st.error(f"Missing data for user: {username}")
-                else:
-                    st.error("User data is not in the expected format. Please check the JSON file.")
+                        self.users[username] = User(**data)
         except FileNotFoundError:
-            st.error("User data file not found.")
+            pass
         except json.JSONDecodeError:
-            st.error("Error reading user data. Please check the JSON format.")
+            pass
 
 def display_user_profile(user):
     st.subheader("Your Profile")
@@ -101,49 +105,97 @@ def display_recommended_foods(health_condition):
     else:
         st.write("No foods available for this health condition.")
 
+def place_order(user, user_manager):
+    st.subheader("Place an Order")
+    selected_foods = st.multiselect(
+        "Select foods to order:",
+        FOOD_ITEMS,
+        format_func=lambda x: f"{x['name']} - ${x['price']}"
+    )
+    
+    # Styling for buttons
+    if st.button("Confirm Order", key="confirm_order", help="Confirm your selected food items"):
+        total_cost = sum(item["price"] for item in selected_foods)
+        if total_cost > user.budget:
+            st.warning(f"Order exceeds your budget by ${total_cost - user.budget:.2f}.")
+        else:
+            st.success(f"Order placed successfully! Total cost: ${total_cost:.2f}.")
+            user.food_choices.extend([item["name"] for item in selected_foods])
+            user_manager.save_users("users.json")
+
 def main():
-    # Custom CSS
+    # CSS styling
     st.markdown("""
         <style>
-            body {
-                background-color: #f0f4f8;
-                font-family: 'Arial', sans-serif;
+            .main {
+                background-color: #f8f9fa;
+                padding: 20px;
+                border-radius: 10px;
             }
-            .header {
+            h1, h2, h3 {
+                color: #343a40;
+            }
+            .stButton {
+                background-color: #007bff;
+                color: black;
+                border-radius: 5px;
+                font-size: 16px;  /* Increase font size */
+                padding: 10px;    /* Add padding */
+            }
+            .stButton:hover {
+                background-color: #0056b3;
+            }
+            .stMultiselect {
+                margin-bottom: 20px;
+            }
+            .welcome {
                 text-align: center;
-                color: #2c3e50;
+                margin-bottom: 30px;
             }
-            .section-title {
-                color: #2980b9;
+            .intro {
+                font-size: 1.1em;
+                line-height: 1.5;
             }
-            .stButton>button {
-                background-color: #2980b9;
-                color: white;
-            }
-            .stButton>button:hover {
-                background-color: #3498db;
-                color: white;
+            .benefits {
+                margin-top: 20px;
+                padding: 10px;
+                background-color: #e9ecef;
+                border-radius: 5px;
             }
         </style>
     """, unsafe_allow_html=True)
 
-    st.title("Health Challenge Food Recommendations", anchor="header")
+    st.title("Health Challenge Food Recommendations")
     user_manager = UserManager()
 
     menu = ["Home", "Register", "Login"]
-    choice = st.sidebar.selectbox("Select an option", menu)
+    choice = st.sidebar.selectbox("Menu", menu)
 
     if choice == "Home":
-        st.subheader("Welcome to the Health Challenge Food Recommendations App!")
-        st.write("Get personalized food recommendations based on your health challenges.")
-        st.write("### Tips for a Healthy Lifestyle:")
-        st.write("1. Stay hydrated by drinking plenty of water.")
-        st.write("2. Incorporate a variety of fruits and vegetables into your diet.")
-        st.write("3. Exercise regularly to maintain a healthy weight.")
-        st.write("4. Get enough sleep to support overall health.")
+        st.write("<div class='welcome'><h2>Welcome to Your Health Companion!</h2></div>", unsafe_allow_html=True)
+        
+        st.write("<div class='intro'>"
+                 "Are you looking to improve your health through better food choices? "
+                 "Our application provides personalized food recommendations tailored to your specific health conditions. "
+                 "Whether you're managing diabetes, high blood pressure, or simply looking to eat healthier, we have you covered!"
+                 "</div>", unsafe_allow_html=True)
+
+        st.write("<div class='benefits'>"
+                 "<h3>Why Choose Us?</h3>"
+                 "<ul>"
+                 "<li><strong>Personalized Recommendations:</strong> Get food suggestions based on your health needs.</li>"
+                 "<li><strong>Easy to Use:</strong> Simple interface to register and start receiving advice.</li>"
+                 "<li><strong>Stay Within Budget:</strong> Plan your meals without exceeding your budget.</li>"
+                 "<li><strong>Track Your Progress:</strong> Log your meals and see how you’re doing over time.</li>"
+                 "</ul>"
+                 "</div>", unsafe_allow_html=True)
+
+        st.write("<div class='intro'>"
+                 "To get started, please register or log in to access tailored food recommendations and order your meals directly."
+                 "</div>", unsafe_allow_html=True)
 
     elif choice == "Register":
-        st.subheader("Register New User")
+        st.subheader("Register")
         username = st.text_input("Username")
         budget = st.number_input("Budget ($)", min_value=0.0, format="%.2f")
         age = st.number_input("Age", min_value=0)
@@ -153,7 +205,7 @@ def main():
 
         if st.button("Register"):
             if user_manager.register_user(username, budget, age, weight, height, health_condition):
-                st.success("User registered successfully!")
+                st.success("Registration successful!")
             else:
                 st.error("Username already exists.")
 
@@ -163,11 +215,30 @@ def main():
         current_user = user_manager.login_user(username)
 
         if current_user:
-            st.success(f"Logged in as **{current_user.username}**")
-            display_user_profile(current_user)  # Display user profile
-            health_condition = st.selectbox("Select a health challenge to solve", list(HEALTH_CHALLENGES.keys()))
-            if st.button("Get Food Recommendations"):
-                display_recommended_foods(health_condition)
+            st.success(f"Welcome back, {current_user.username}!")
+            display_user_profile(current_user)
+
+            st.subheader("Update Profile")
+            updated_budget = st.number_input("Update Budget ($)", value=current_user.budget, format="%.2f")
+            updated_weight = st.number_input("Update Weight (kg)", value=current_user.weight)
+            updated_height = st.number_input("Update Height (cm)", value=current_user.height)
+            updated_health_condition = st.selectbox("Update Health Condition", list(HEALTH_CHALLENGES.keys()), index=list(HEALTH_CHALLENGES.keys()).index(current_user.health_condition))
+
+            # Styling for the update button
+            if st.button("Update Profile", key="update_profile"):
+                if user_manager.update_user(
+                    username,
+                    budget=updated_budget,
+                    weight=updated_weight,
+                    height=updated_height,
+                    health_condition=updated_health_condition
+                ):
+                    st.success("Profile updated successfully!")
+                else:
+                    st.error("Error updating profile.")
+
+            display_recommended_foods(current_user.health_condition)
+            place_order(current_user, user_manager)
         else:
             st.error("User not found.")
 
